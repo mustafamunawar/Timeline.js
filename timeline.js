@@ -1,12 +1,302 @@
 
-/*Timeline.js
+/**
+ * Creates a new Timeline.
+ * A timeline contains a list of sequences.
+ * A sequence contains a list of keyframes (written in JSON format) that define a complex animation. Very similar to CSS keyframes.
+ * @class
+ */
+ 
+function Timeline()
+{
+	if(!(this instanceof Timeline)) return new Timeline();
+	this.cname='Timeline';
+	
+	this.sequences=[];
+	this.time=0;
+	this.is_playing=0;
+	this.prev_systime=0;
+}
 
-*/
+
+/**
+ * Add an animation sequence to the timeline
+ *
+ * @param dom_ele The DOM element to animate. 
+ * @param opts Options for animating the sequence
+ * @param opts.duration The duration in seconds
+ * @param opts.pos Where to add the sequence. Can specify a absolute position (in seconds). Can  use arithmetic with 'last' or 'last.end' keywords. e.g. 'last+1' means the position is 1 second after the last sequence starts.
+ * @param opts.accel Can be '+' or '-'. It is also known as the 'easing function'.
+ * @param opts.loop Whether to loop the animation after it is done
+ * @return the added Sequence object
+ */
+ 
+Timeline.prototype.add=function(dom_ele, opts)
+{
+	if(dom_ele==u)
+		return;
+		
+		
+	//set default values
+	if(opts.duration==u) opts.duration=0.4; 
+	if(opts.pos==u) opts.pos='last.end+0';  
+	if(opts.accel==u) opts.accel='+'; 
+	if(opts.loop==u) opts.loop='off';
+	
+	
+	
+	var abs_pos=opts.pos;
+	
+	
+	//this is only needed to evaluate opts.pos if it is a string arithmetic expression e.g 'last+0.5';
+	if(typeof  opts.pos === 'string')
+	{
+		var last_seq=this.sequences.last();
+		var last_start=0;
+		var last_end=0;
+		if(last_seq!=u)
+		{
+			last_start=last_seq.abs_start_time;
+			last_end=last_seq.abs_end_time;
+		}
+		abs_pos=str(opts.pos);
+		abs_pos=abs_pos.replace('last.end', last_end); 
+		abs_pos=abs_pos.replace('last', last_start); 
+		abs_pos=eval(abs_pos);
+	}
+	
+	
+	
+	//Let us  pre-compute as much as possibel the timeline sequence. This will save performance later when it is really needed (i.e. in RAF which will be called 55 times per second).
+	var seq={}; 
+	seq.id='';
+	seq.abs_start_time=abs_pos;
+	seq.abs_end_time=abs_pos+opts.duration ;
+	seq.loop=opts.loop;
+	seq.props=[];
+	
+	
+	for(var prop_name in opts.seq)
+	{
+		if(!opts.seq.hasOwnProperty(prop_name))
+			continue;
+		
+		var keyframes=opts.seq[prop_name];
+		var cur=dom_ele[prop_name]();
+		if(keyframes['0']==u)
+			keyframes['0']='cur';
+		
+		if(keyframes['100']==u)
+			keyframes['100']='cur';
+		
+		
+		//a special keyframe value is 'cur'. It is the current value as computed when add() is called. 
+		var percents=Object.keys(keyframes).map(Number).sort('number');
+		for(var i=1; i<percents.length;  i++)
+		{	
+			//keyframes['0'] not added, used as start for next percent
+			var prop={};	
+			if(i==1)
+				prop.orig_val=cur;
+		
+			prop.name=prop_name;
+			prop.accel=opts.accel;
+			var percent=percents[i];
+			var percent_prev=percents[i-1];
+			
+			//eval is needed because keyframes can have string arithmetic expressions e.g. 'cur+360'
+			prop.start_val= eval(keyframes[percent_prev]);
+			prop.end_val  = eval(keyframes[percent]);
+			
+			
+			prop.duration=(percent-percent_prev)/100 * opts.duration;
+			prop.start_time=(percent_prev/100)*opts.duration;
+			prop.end_time=(percent/100)*opts.duration;
+			
+			
+			prop.dom_ele=dom_ele;
+			seq.props.push(prop);
+		}
+	}
+	this.sequences.push(  seq );
+	return this.sequences.last();
+}
 
 
-//These are example sequences that can be used right away.
+/**
+ * Reset all DOM elements to make their properties have the original values (the values before the timeline was run)
+ */
+
+Timeline.prototype.restore_orig_values=function()
+{
+	for(var i=0; i<this.sequences.length; i++)
+	{
+		var seq=this.sequences[i];
+		for(var j=0; j<seq.props.length; j++)
+		{
+			var prop=seq.props[j];
+			if(prop.orig_val!=u)
+				prop.dom_ele[prop.name](prop.orig_val);
+		}
+	}
+}
+
+
+
+/**
+ * Play the timeline at normal speed.
+ */
+
+Timeline.prototype.play=function()
+{
+	this.is_playing=1;
+	if(this.raf_bind==u)
+		this.raf_bind=this.raf.bind(this);
+	requestAnimationFrame(this.raf_bind);
+}
+
+
+
+/**
+ * Pause the timeline.
+ */
+
+Timeline.prototype.pause=function()
+{
+	this.is_playing=0;
+	this.prev_systime=0;
+}
+
+
+
+ 
+ 
+/**
+ * Reset the timleine to its beginning state (as if it was never run).
+ */
+
+ 
+Timeline.prototype.reset=function()
+{
+	this.time=0;
+	this.prev_systime=0;
+	this.is_playing=0;
+	this.sequences=[];
+	this.restore_orig_values();
+}
+
+
+
+
+/**
+ * @private
+ * Is called on each Request Animation Frame. In many systems, this is about every ~17ms to achieve an 56 frames per second.
+ * I tend to keep functions small. However, RAF needs every bit of performance (for smooth animations), hence it minimizes external function calls.
+ */
+
+Timeline.prototype.raf=function(systime)
+{
+	//return if paused or stopped
+	if(this.is_playing==0)
+		return;
+	
+	if(this.prev_systime==0)
+		this.prev_systime=systime;
+	
+	//see the change in time since the last RAF call. Add this delta to the total elapsed time of the timeline
+	var dt = systime - this.prev_systime;
+	this.prev_systime=systime;
+	this.time+=(dt/1000);
+	
+	//iterate over sequences
+	var num_seq_completed=0;
+	for(var i=0; i<this.sequences.length; i++)
+	{
+		var seq=this.sequences[i];
+		if(seq.abs_start_time>this.time)
+			continue;
+		
+		
+		if(seq.completed)
+		{
+			num_seq_completed++;
+			continue;
+		}
+		
+		for(var j=0; j<seq.props.length; j++)
+		{
+			var prop=seq.props[j];
+			var abs_prop_start_time=seq.abs_start_time+prop.start_time;
+			var prop_end_time_abs=seq.abs_start_time+prop.end_time;
+			if(abs_prop_start_time>this.time)
+				continue;
+			
+
+			//an easing function takes in a percentage (of time), and returns a new percentage
+			
+			
+			var percent=(this.time-abs_prop_start_time)/prop.duration;  //percent progress of prop
+			
+			if(prop.accel=='+') //easein cubic
+				percent=percent*percent*percent;
+
+			else if(prop.accel=='-')  //easeout quadric
+				percent=(--percent)*percent*percent+1;
+
+
+			var new_val;
+			if(prop.start_val.length==u)
+				new_val=prop.start_val + (percent*  (prop.end_val-prop.start_val)   ) ;
+			else
+			{
+				new_val=array(prop.start_val.length);
+				for(var k=0; k<prop.start_val.length; k++)
+					new_val[k]=prop.start_val[k] + (percent*  (prop.end_val[k]-prop.start_val[k])   ) ;
+			}
+
+			if(prop_end_time_abs<=this.time)
+			{
+				prop.item[prop.name](prop.end_val);
+				continue;
+			}
+
+
+			prop.item[prop.name](new_val);
+		}
+		
+		
+		if(seq.abs_end_time<=this.time)
+		{
+			if( (seq.loop=='on') || (seq.loop=='pause') )
+			{
+				var seq_duration=seq.abs_end_time-seq.abs_start_time;
+				seq.abs_start_time+=seq_duration;
+				if(seq.loop=='pause')
+					seq.abs_start_time+=1.5;
+				seq.abs_end_time=seq.abs_start_time+seq_duration;
+				continue;
+			}
+			
+			seq.completed=1;
+		}
+	}
+	
+	if(num_seq_completed==this.sequences.length)
+	{
+		//completed entire timeline. send a callback
+		if(this.complete_cb)
+			this.complete_cb();
+		
+		return;
+	}
+	
+	
+	requestAnimationFrame(this.raf_bind);
+}
+
+
+
+//These are example sequences that can be added to the timeline right away.
 seq={};
-
 seq.fadein=
 {
 	opacity: 
@@ -149,7 +439,6 @@ seq.rubber=
 };
 
 
-//have rubber options: rubber right, rubber left
 
 seq.shake=
 {
@@ -168,10 +457,6 @@ seq.shake=
 };
 
 
-
-
-//org has nine places, def is 'c'.
-//each percent vacent va cent va l l 
 
 seq.swing=
 {
@@ -244,12 +529,6 @@ seq.zoomout_left=
 		100: [0,50]
 	},
 	
-	/*
-	persp:
-	{ 
-		0: 800,
-		100: 800
-	}*/
 }
 
 
@@ -282,274 +561,14 @@ seq.persp_up=
 
 seq.tinyshake=
 {
-	/*translatey:
-	{
-		0:'-800',
-		100:460
-	}, */
 	rotatez:
 	{
 		20:  'cur+4', 
 		40:'cur-4',
 		60: 'cur+4',
 		80:'cur-4',
-	}//,
-	
-//org:{ 0: 'top center' }
+	}
 };
 
 
 
-
-//timeline.props=[];  //maybe for performance, sort arrays based on start time
-
-function Timeline()
-{
-	if(!(this instanceof Timeline)) return new Timeline();
-	this.cname='Timeline';
-	
-	this.sequences=[];
-	this.time=0;
-	this.is_playing=0;
-	this.prev_systime=0;
-}
-
-//item has _rotate, _scale
-Timeline.prototype.add=function(dom_ele, opts)
-{
-	if(dom_ele==u)
-		return;
-	
-	 //opts: seq,duration,pos,posmode
-	if(opts.duration==u) opts.duration=0.4; 
-	if(opts.pos==u) opts.pos='last.end+0';  
-	if(opts.posmode==u) opts.posmode='after'; 
-	if(opts.accel==u) opts.accel='+'; 
-	if(opts.loop==u) opts.loop='off';
-	
-	//start can be 'with,after'. default is after. meaning: with prev sequence, after prev sequence.
-
-	//pos can have seq ids. use .end to specify end of seq.  e.g. 'last.end+5'
-	var last_seq=this.sequences.last();
-	var last_start=0;
-	var last_end=0;
-	if(last_seq!=u)
-	{
-		last_start=last_seq.abs_start_time;
-		last_end=last_seq.abs_end_time;
-	}
-	
-	
-	var abs_pos=str(opts.pos);
-	abs_pos=abs_pos.replace('last.end', last_end); 
-	abs_pos=abs_pos.replace('last', last_start); 
-	abs_pos=eval(abs_pos);
-	
-	
-	var seq={}; //a computed timeline sequence
-	seq.id='';
-	seq.abs_start_time=abs_pos;
-	seq.abs_end_time=abs_pos+opts.duration ;
-	seq.loop=opts.loop;
-	seq.props=[];
-	
-	
-	for(var prop_name in opts.seq)
-	{
-		if(!opts.seq.hasOwnProperty(prop_name))
-			continue;
-		
-		var keyframes=opts.seq[prop_name];
-		var cur=dom_ele[prop_name]();
-		if(keyframes['0']==u)
-			keyframes['0']='cur';
-		
-		if(keyframes['100']==u)
-			keyframes['100']='cur';
-		
-		var percents=Object.keys(keyframes).mp('int').sort('number');
-		for(var i=1; i<percents.length;  i++)
-		{	
-			//keyframes['0'] not added, used as start for next percent
-			//cur is current value, and computed when add() is called.   use + or -. e.g. 0:cur, 100:cur+360
-			var prop={};	
-			if(i==1)
-				prop.orig_val=cur;
-		
-			prop.name=prop_name;
-			prop.accel=opts.accel;
-			var percent=percents[i];
-			var percent_prev=percents[i-1];
-			
-			prop.start_val= eval(keyframes[percent_prev]);
-			prop.end_val  = eval(keyframes[percent]);
-			
-			prop.duration=(percent-percent_prev)/100 * opts.duration;
-			prop.start_time=(percent_prev/100)*opts.duration;
-			prop.end_time=(percent/100)*opts.duration;
-			//log('prop='+obj2str(prop));
-			prop.dom_ele=dom_ele;
-			seq.props.push(prop);
-		}
-	}
-	this.sequences.push(  seq );
-	return this.sequences.last();
-}
-
-Timeline.prototype.set_start_vals=function()
-{
-	for(var i=0; i<this.sequences.length; i++)
-	{
-		var seq=this.sequences[i];
-		for(var j=0; j<seq.props.length; j++)
-		{
-			var prop=seq.props[j];
-			
-			if(prop.orig_val!=u)
-			{
-				prop.dom_ele[prop.name](prop.start_val);
-			}
-		}
-	}
-	
-}
-
-
-Timeline.prototype.restore_orig_vals=function()
-{
-	for(var i=0; i<this.sequences.length; i++)
-	{
-		var seq=this.sequences[i];
-		for(var j=0; j<seq.props.length; j++)
-		{
-			var prop=seq.props[j];
-			if(prop.orig_val!=u)
-				prop.dom_ele[prop.name](prop.orig_val);
-		}
-	}
-}
-
-
-
-Timeline.prototype.play=function()
-{
-	this.is_playing=1;
-	if(this.raf_bind==u)
-		this.raf_bind=this.raf.bind(this);
-	requestAnimationFrame(this.raf_bind);
-}
-
-Timeline.prototype.pause=function()
-{
-	this.is_playing=0;
-	this.prev_systime=0;
-}
-
-Timeline.prototype.reset=function()
-{
-	this.time=0;
-	this.prev_systime=0;
-	this.is_playing=0;
-	this.sequences=[];
-}
-
-/*Normally, I tend to keep functions small. However, RAF needs every bit of performance*/
-Timeline.prototype.raf=function(systime)
-{
-	
-	if(this.is_playing==0)
-		return;
-	
-	//systime = new Date().getTime();
-	if(this.prev_systime==0)
-		this.prev_systime=systime;
-	
-	var dt = systime - this.prev_systime;
-	this.prev_systime=systime;
-	this.time+=(dt/1000);
-	
-	//loop through items
-	var num_seq_completed=0;
-	for(var i=0; i<this.sequences.length; i++)
-	{
-		var seq=this.sequences[i];
-		if(seq.abs_start_time>this.time)
-			continue;
-		
-		if(seq.completed)
-		{
-			num_seq_completed++;
-			continue;
-		}
-			
-			
-		//log('seq.props.length='+seq.props.length);
-		for(var j=0; j<seq.props.length; j++)
-		{
-			var prop=seq.props[j];
-			var abs_prop_start_time=seq.abs_start_time+prop.start_time;
-			var prop_end_time_abs=seq.abs_start_time+prop.end_time;
-			if(abs_prop_start_time>this.time)
-				continue;
-			
-
-			//easing function takes in a percentage (of time), and returns a new percentage
-			
-			
-			var percent=(this.time-abs_prop_start_time)/prop.duration;  //percent progress of prop
-			if(prop.accel=='+') //easein cubic
-				percent=percent*percent*percent;
-
-			else if(prop.accel=='-')  //easeout quadric
-				percent=(--percent)*percent*percent+1;
-
-
-			var new_val;
-			if(prop.start_val.length==u)
-				new_val=prop.start_val + (percent*  (prop.end_val-prop.start_val)   ) ;
-			else
-			{
-				new_val=array(prop.start_val.length);
-				for(var k=0; k<prop.start_val.length; k++)
-					new_val[k]=prop.start_val[k] + (percent*  (prop.end_val[k]-prop.start_val[k])   ) ;
-			}
-
-			if(prop_end_time_abs<=this.time)
-			{
-				prop.item[prop.name](prop.end_val);
-				continue;
-			}
-
-
-			prop.item[prop.name](new_val);
-		}
-		
-		
-		if(seq.abs_end_time<=this.time)
-		{
-			if( (seq.loop=='on') || (seq.loop=='pause') )
-			{
-				var seq_duration=seq.abs_end_time-seq.abs_start_time;
-				seq.abs_start_time+=seq_duration;
-				if(seq.loop=='pause')
-					seq.abs_start_time+=1.5;
-				seq.abs_end_time=seq.abs_start_time+seq_duration;
-				continue;
-			}
-			
-			seq.completed=1;
-		}
-	}
-	
-	if(num_seq_completed==this.sequences.length)
-	{
-		//completed entire timeline
-		if(this.complete_cb)
-			this.complete_cb();
-		log('done timeline');
-		return;
-	}
-	
-	
-	requestAnimationFrame(this.raf_bind);
-}
