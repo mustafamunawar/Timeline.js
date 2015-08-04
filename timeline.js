@@ -1,11 +1,6 @@
 
 /*Timeline.js
 
-
-Demo:
-
-this is a small, but surprisngly powerful library. It allows complete timeline-based animation. It can replace CSS3 animations.
-Motivation for making this library
 */
 
 
