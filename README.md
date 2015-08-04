@@ -1,10 +1,10 @@
-## Synopsis
+## Timeline.js
 
 At the top of the file there should be a short introduction and/ or overview that explains **what** the project is. This description should match descriptions added for package managers (Gemspec, package.json, etc.)
 
-## Code Example
+## Demo
 
-Show what the library does as concisely as possible, developers should be able to figure out **how** your project solves their problem by looking at the code example. Make sure the API you are showing off is obvious, and that your code is short and concise.
+Here is a **demo** of a page made using Timeline.js: [view demo](https://e37d8bf05815d68846fc659f89a42d2ca1b57b8c.googledrive.com/host/0B1v99s-PldDPZmY0eXlkNXpCeG8/car_dealer.html) 
 
 ## Motivation
 

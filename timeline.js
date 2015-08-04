@@ -3,7 +3,7 @@
 
 
 Demo:
-https://e37d8bf05815d68846fc659f89a42d2ca1b57b8c.googledrive.com/host/0B1v99s-PldDPZmY0eXlkNXpCeG8/car_dealer.html
+
 this is a small, but surprisngly powerful library. It allows complete timeline-based animation. It can replace CSS3 animations.
 Motivation for making this library
 */
