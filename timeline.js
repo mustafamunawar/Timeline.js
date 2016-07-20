@@ -32,15 +32,15 @@ function Timeline()
  
 Timeline.prototype.add=function(dom_ele, opts)
 {
-	if(dom_ele==u)
+	if(dom_ele==undefined)
 		return;
 		
 		
 	//set default values
-	if(opts.duration==u) opts.duration=0.4; 
-	if(opts.pos==u) opts.pos='last.end+0';  
-	if(opts.accel==u) opts.accel='+'; 
-	if(opts.loop==u) opts.loop='off';
+	if(opts.duration==undefined) opts.duration=0.4; 
+	if(opts.pos==undefined) opts.pos='last.end+0';  
+	if(opts.accel==undefined) opts.accel='+'; 
+	if(opts.loop==undefined) opts.loop='off';
 	
 	
 	
@@ -82,10 +82,10 @@ Timeline.prototype.add=function(dom_ele, opts)
 		
 		var keyframes=opts.seq[prop_name];
 		var cur=dom_ele[prop_name]();
-		if(keyframes['0']==u)
+		if(keyframes['0']==undefined)
 			keyframes['0']='cur';
 		
-		if(keyframes['100']==u)
+		if(keyframes['100']==undefined)
 			keyframes['100']='cur';
 		
 		
@@ -149,7 +149,7 @@ Timeline.prototype.restore_orig_values=function()
 Timeline.prototype.play=function()
 {
 	this.is_playing=1;
-	if(this.raf_bind==u)
+	if(this.raf_bind==undefined)
 		this.raf_bind=this.raf.bind(this);
 	requestAnimationFrame(this.raf_bind);
 }
@@ -244,7 +244,7 @@ Timeline.prototype.raf=function(systime)
 
 
 			var new_val;
-			if(prop.start_val.length==u)
+			if(prop.start_val.length==undefined)
 				new_val=prop.start_val + (percent*  (prop.end_val-prop.start_val)   ) ;
 			else
 			{
