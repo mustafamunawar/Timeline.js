@@ -1,3 +1,4 @@
+//jsdoc comment style
 
 /**
  * Creates a new Timeline.
